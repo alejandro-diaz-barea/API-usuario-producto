@@ -1,91 +1,79 @@
 package com.example.demo.controlador;
 
+import com.example.demo.dto.ProductoDTO;
+import com.example.demo.error.ProductoExistenteException;
+import com.example.demo.error.ProductoNotFoundException;
+import com.example.demo.modelo.Producto;
+import com.example.demo.modelo.Usuario;
 import com.example.demo.repos.ProductoRepositorio;
-import com.example.demo.repos.UsuarioRepositorio;
-import org.springframework.data.rest.webmvc.ResourceNotFoundException;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import com.example.demo.modelo.Producto;
 
 import javax.validation.Valid;
+import java.util.ArrayList;
 import java.util.List;
-@CrossOrigin(origins = "http://localhost:63342")
+
+@CrossOrigin(origins = "http://localhost")
 @RestController
 @RequestMapping("/api/producto")
 public class ProductoControlador {
     private final ProductoRepositorio productoRepositorio;
-    private final UsuarioRepositorio usuarioRepositorio;
 
-    public ProductoControlador(ProductoRepositorio productoRepositorio, UsuarioRepositorio usuarioRepositorio) {
+    public ProductoControlador(ProductoRepositorio productoRepositorio) {
         this.productoRepositorio = productoRepositorio;
-        this.usuarioRepositorio = usuarioRepositorio;
     }
 
-    @GetMapping("/")
-    List<Producto> getProductos()
-    {
-        return productoRepositorio.findAll();
+    @GetMapping
+    public List<ProductoDTO> getProductos(){
+        List<ProductoDTO> resultado = new ArrayList<>();
+        for (Producto producto: productoRepositorio.findAll()) resultado.add(new ProductoDTO(producto));
+        return resultado;
     }
 
     @GetMapping("/{id}")
-    Producto getProductoById(@PathVariable Long id)
-    {
+    public Producto getProducto(@PathVariable Long id){
         return productoRepositorio.findById(id).orElse(null);
     }
+
+    /*¿Sería deseable tener  un producto repetido? Si es así, ¿como lo solucionarías?
+     * No es deseable tener prodctos repetidos ya que despues darian conflicto de precios y confusiones de ID
+     * para solucionarlo se debería poner la marca a la que pertenece el producto o algo que lo vuelva característico.*/
     @PostMapping("/")
-    public Producto createProducto(@Valid @RequestBody Producto producto) {
-        return productoRepositorio.save(producto);
+    public ResponseEntity<Producto> createProducto(@Valid @RequestBody Producto producto){
+        if (productoRepositorio.existsByName(producto.getName())) {
+            throw new ProductoExistenteException();
+        }
+
+        Producto nuevoProducto = productoRepositorio.save(producto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(nuevoProducto);
     }
 
     @PutMapping("/{id}")
-    public Producto updateProducto(@PathVariable Long id, @Valid @RequestBody Producto producto) {
+    public Producto updateProducto(@PathVariable Long id, @Valid @RequestBody Producto producto){
         return productoRepositorio.findById(id)
                 .map(existingProducto -> {
                     existingProducto.setName(producto.getName());
                     existingProducto.setPrice(producto.getPrice());
                     return productoRepositorio.save(existingProducto);
                 })
-                .orElseThrow(() -> new ResourceNotFoundException("Producto not found with id " + id));
+                .orElseThrow(() -> new ProductoNotFoundException(id));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<?> deleteProducto(@PathVariable Long id) {
+    public ResponseEntity<?> deleteProducto(@PathVariable Long id){
         return productoRepositorio.findById(id)
-                .map(producto -> {
-                    productoRepositorio.delete(producto);
-                    return ResponseEntity.ok().build();
+                .map(existingProducto -> {
+                    productoRepositorio.delete(existingProducto);
+                    return ResponseEntity.noContent().build();
                 })
-                .orElseThrow(() -> new ResourceNotFoundException("Producto not found with id " + id));
+                .orElseThrow(() -> new ProductoNotFoundException(id));
     }
 
-    // Crear productos asociados a cliente
-    @PostMapping("/{id}/productos")
-    public Producto addProducto(@PathVariable Long id, @Valid @RequestBody Producto producto) {
-        return productoRepositorio.findById(id)
-                .map(usuario -> {
-                    producto.setUsuario(usuario.getUsuario());
-                    return productoRepositorio.save(producto);
-                })
-                .orElseThrow(() -> new ResourceNotFoundException("Usuario not found with id " + id));
+    @PostMapping("/{id}/usuarios")
+    public List<Usuario> getProductUsuarios(@PathVariable Long id){
+        Producto producto = productoRepositorio.findById(id)
+                .orElseThrow(() -> new ProductoNotFoundException(id));
+        return producto.getUsuarios();
     }
-
-    @PutMapping("/{id}/productos/{productoId}")
-    public Producto updateProducto(@PathVariable Long id, @PathVariable Long productoId, @Valid @RequestBody Producto productoRequest) {
-        if(!usuarioRepositorio.existsById(id)) {
-            throw new ResourceNotFoundException("Usuario not found with id " + id);
-        }
-
-        return productoRepositorio.findById(productoId)
-                .map(producto -> {
-                    producto.setName(productoRequest.getName());
-                    producto.setPrice(productoRequest.getPrice());
-                    return productoRepositorio.save(producto);
-                })
-                .orElseThrow(() -> new ResourceNotFoundException("Producto not found with id " + productoId));
-    }
-    @GetMapping("/usuario/{usuarioId}")
-    public List<Producto> getProductosByUsuario(@PathVariable Long usuarioId) {
-        return productoRepositorio.findByUsuarioId(usuarioId);
-    }
-
 }
